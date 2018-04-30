@@ -1,16 +1,18 @@
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class SnakeLadderProblem {
-    static int countA = 0;
-    static int countB =0;
+    static AtomicInteger countA = new AtomicInteger(0);
+    static AtomicInteger countB = new AtomicInteger(0);
     static List<Integer> userAList = new ArrayList<>();
     static List<Integer> userBList = new ArrayList<>();
     public static int[][] inputArray()throws IOException {
@@ -38,51 +40,72 @@ public class SnakeLadderProblem {
             }
             System.out.println();
         }*/
-       return arr;
+        return arr;
     }
     public static void main(String[] args)throws IOException {
         int[][] array = inputArray();
         AtomicBoolean playerA= new AtomicBoolean(true);
 //        snackLadder(10, 10, 3, true);
         ExecutorService executorService = Executors.newFixedThreadPool(2);
-        final Object lock = new Object();
+        Lock lock = new ReentrantLock();
+        Condition condition = lock.newCondition();
         executorService.execute(() -> {
-//            Thread.currentThread().setName("Test1");
-            while (countA != 100 && countB!= 100) {
-                if (playerA.get()) {
-                    try {
-                        drawValue('A', array);
-                        playerA.set(false);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                    synchronized (lock) {
-                        lock.notify();
-                    }
-                } else if (!playerA.get()) {
-                    try {
-                        drawValue('B', array);
-                        playerA.set(true);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                    synchronized (lock) {
-                        lock.notify();
-                    }
-                } else {
-                    synchronized (lock) {
+            while(countA.get() != 100 && countB.get()!= 100) {
+                try {
+                    lock.lock();
+                    if (playerA.get()) {
                         try {
-                            lock.wait();
+                            countA.incrementAndGet();
+//                            System.out.println("playerA" + playerA.get() + "Interrupted ::" + countA.get());
+                            drawValue('A', array);
+                            playerA.set(false);
+                            condition.signal();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    } else {
+                        try {
+                            condition.await();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
                     }
+                }finally {
+                    lock.unlock();
+                }
+            }
+//            printArray();
+        });
+        executorService.execute(() -> {
+            while(countA.get() != 100 && countB.get() != 100) {
+                try {
+                    lock.lock();
+                    if (!playerA.get()) {
+                        try {
+                            countB.incrementAndGet();
+//                            System.out.println("playerB" + playerA.get() + "::" + countB.get());
+                            drawValue('B', array);
+                            condition.signal();
+                            playerA.set(true);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    } else {
+                        try {
+                            condition.await();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }finally {
+                    lock.unlock();
                 }
             }
             printArray();
-
         });
+
         executorService.shutdown();
+
     }
 
 
@@ -93,9 +116,9 @@ public class SnakeLadderProblem {
         Random rand = new Random();
         int randomNum = rand.nextInt((max - min) + 1) + min;
         if(player == 'A') {
-            snackLadder(countA, countB, randomNum, true, array);
+            snackLadder(countA.get(), countB.get(), randomNum, true, array);
         }else {
-            snackLadder(countA, countB, randomNum, false, array);
+            snackLadder(countA.get(), countB.get(), randomNum, false, array);
         }
 
     }
@@ -109,10 +132,10 @@ public class SnakeLadderProblem {
 //        System.out.println("length::" + array.length);
 
         for(int i =0; i < array.length; i++) {
-           snakeTail.add(array[i][0]);
-           snakeHead.add(array[i][1]);
-           ladderTop.add(array[i][2]);
-           ladderBottom.add(array[i][3]);
+            snakeTail.add(array[i][0]);
+            snakeHead.add(array[i][1]);
+            ladderTop.add(array[i][2]);
+            ladderBottom.add(array[i][3]);
         }
 
         if(value) {
@@ -124,16 +147,16 @@ public class SnakeLadderProblem {
                 int lBottomIndex = ladderBottom.indexOf(currentValueA + num);
                 if(sTopIndex != -1) {
                     Integer snakeBottomValue = snakeTail.get(sTopIndex);
-                    countA = snakeBottomValue;
+                    countA.set(snakeBottomValue);
 
                 }else if(lBottomIndex != -1) {
                     Integer ladderTopValue = ladderTop.get(lBottomIndex);
-                    countA = ladderTopValue;
+                    countA.set(ladderTopValue);
                 }
                 else {
-                    countA = currentValueA + num;
+                    countA.set(currentValueA + num);
                 }
-                userAList.add(countA);
+                userAList.add(countA.get());
             }
         }else {
             if (currentValueB + num <= 100) {
@@ -141,16 +164,16 @@ public class SnakeLadderProblem {
                 int lBottomIndex = ladderBottom.indexOf(currentValueB + num);
                 if(sTopIndex > -1) {
                     Integer snakeBottomValue = snakeTail.get(sTopIndex);
-                    countB = snakeBottomValue;
+                    countB.set(snakeBottomValue);
 
                 }else if(lBottomIndex > -1) {
                     Integer ladderTopValue = ladderTop.get(lBottomIndex);
-                    countB = ladderTopValue;
+                    countB.set(ladderTopValue);
                 }
                 else {
-                    countB = currentValueB + num;
+                    countB.set(currentValueB + num);
                 }
-                userBList.add(countB);
+                userBList.add(countB.get());
             }
         }
     }
